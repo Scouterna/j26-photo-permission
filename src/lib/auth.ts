@@ -6,6 +6,7 @@ interface KeycloakResourceAccess {
 
 interface KeycloakPayload {
 	sub?: string;
+	realm_access?: { roles?: string[] };
 	resource_access?: KeycloakResourceAccess;
 	name?: string;
 	preferred_username?: string;
@@ -43,7 +44,10 @@ export function decodeAndGetUser(token: string): AppUser | null {
 			email: payload.email ?? "",
 			preferredUsername: payload.preferred_username ?? "",
 			picture: payload.picture,
-			roles: collectAllRoles(payload.resource_access),
+			roles: [
+				...(payload.realm_access?.roles ?? []),
+				...collectAllRoles(payload.resource_access),
+			],
 		};
 	} catch (err) {
 		console.error("[auth] decodeAndGetUser failed:", err);
