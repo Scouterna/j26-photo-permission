@@ -36,6 +36,8 @@ export interface Translations {
 	closeButton: string;
 	photoMode: string;
 	exitPhotoMode: string;
+	approvePhotoPermission: string;
+	verdictApproved: string;
 }
 
 const sv: Translations = {
@@ -49,9 +51,9 @@ const sv: Translations = {
 	labelName: "Namn",
 	labelBorn: "Född",
 	labelGroup: "Scoutkår",
-	placeholderName: "t.ex. Nils Pärlemo",
-	placeholderBorn: "ÅÅÅÅ-MM-DD",
-	placeholderGroup: "t.ex. Stenköpings Scoutkår",
+	placeholderName: "Hela eller delar av namnet",
+	placeholderBorn: "Hela eller delar av ÅÅÅÅ-MM-DD",
+	placeholderGroup: "Hela eller delar av scoutkårens namn",
 	hintStart: "Börja skriva i ett av fälten ovan för att söka deltagare.",
 	noResults: "Inga deltagare hittades.",
 	tooManyResults:
@@ -76,6 +78,8 @@ const sv: Translations = {
 	closeButton: "Stäng",
 	photoMode: "Fotoläge",
 	exitPhotoMode: "Avsluta fotoläge",
+	approvePhotoPermission: "Godkänn fotografering",
+	verdictApproved: "GODKÄNT",
 };
 
 const en: Translations = {
@@ -89,9 +93,9 @@ const en: Translations = {
 	labelName: "Name",
 	labelBorn: "Born",
 	labelGroup: "Scout group",
-	placeholderName: "e.g. Anna",
-	placeholderBorn: "YYYY-MM-DD",
-	placeholderGroup: "e.g. Trollbäckens",
+	placeholderName: "Full or partial name",
+	placeholderBorn: "Full or partial YYYY-MM-DD",
+	placeholderGroup: "Full or partial scout group name",
 	hintStart: "Start typing in one of the fields above to search.",
 	noResults: "No matching members found.",
 	tooManyResults:
@@ -117,6 +121,8 @@ const en: Translations = {
 	closeButton: "Close",
 	photoMode: "Photo mode",
 	exitPhotoMode: "Exit photo mode",
+	approvePhotoPermission: "Approve photography",
+	verdictApproved: "APPROVED",
 };
 
 export const translations: Record<Lang, Translations> = { sv, en };

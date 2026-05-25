@@ -22,7 +22,7 @@ import {
 	Typography,
 } from "@mui/material";
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
 	fetchPhotoPermission,
 	type Member,
@@ -73,6 +73,7 @@ function PhotoPermissionPage() {
 	const [permissionError, setPermissionError] = useState<string | null>(null);
 	const [modalOpen, setModalOpen] = useState(false);
 	const [photoModeOpen, setPhotoModeOpen] = useState(false);
+	const [manuallyApproved, setManuallyApproved] = useState(false);
 
 	const abortRef = useRef<AbortController | null>(null);
 
@@ -130,6 +131,7 @@ function PhotoPermissionPage() {
 		setPermission(null);
 		setPermissionError(null);
 		setPermissionLoading(true);
+		setManuallyApproved(false);
 		const result = await fetchPhotoPermission(
 			config,
 			projectId,
@@ -151,6 +153,9 @@ function PhotoPermissionPage() {
 	}
 
 	function handleEnterPhotoMode() {
+		// Fullscreen/orientation-lock APIs require a user-gesture call stack,
+		// so kick them off here synchronously rather than from a later effect.
+		enterFullscreenLandscape();
 		setModalOpen(false);
 		setPhotoModeOpen(true);
 	}
@@ -227,7 +232,9 @@ function PhotoPermissionPage() {
 				permission={permission}
 				loading={permissionLoading}
 				error={permissionError}
+				manuallyApproved={manuallyApproved}
 				onClose={handleClose}
+				onApprove={() => setManuallyApproved(true)}
 				onEnterPhotoMode={handleEnterPhotoMode}
 			/>
 
@@ -235,6 +242,7 @@ function PhotoPermissionPage() {
 				open={photoModeOpen}
 				member={selected}
 				permission={permission}
+				manuallyApproved={manuallyApproved}
 				onClose={handleExitPhotoMode}
 			/>
 		</Stack>
@@ -428,7 +436,9 @@ function PermissionModal({
 	permission,
 	loading,
 	error,
+	manuallyApproved,
 	onClose,
+	onApprove,
 	onEnterPhotoMode,
 }: {
 	open: boolean;
@@ -436,12 +446,18 @@ function PermissionModal({
 	permission: PhotoPermission | null;
 	loading: boolean;
 	error: string | null;
+	manuallyApproved: boolean;
 	onClose: () => void;
+	onApprove: () => void;
 	onEnterPhotoMode: () => void;
 }) {
 	const t = useT();
 	const verdicts = useVerdictStyles();
-	const canEnterPhotoMode = !loading && !error && permission !== null;
+	const ready = !loading && !error && permission !== null;
+	const showPhotoMode =
+		ready &&
+		(permission === "yes" || (permission === "ask" && manuallyApproved));
+	const showApprove = ready && permission === "ask" && !manuallyApproved;
 
 	return (
 		<Dialog
@@ -498,15 +514,27 @@ function PermissionModal({
 				<Button onClick={onClose} variant="outlined" fullWidth>
 					{t.closeButton}
 				</Button>
-				<Button
-					onClick={onEnterPhotoMode}
-					variant="contained"
-					fullWidth
-					disabled={!canEnterPhotoMode}
-					startIcon={<PhotoCameraIcon />}
-				>
-					{t.photoMode}
-				</Button>
+				{showApprove && (
+					<Button
+						onClick={onApprove}
+						variant="contained"
+						color="warning"
+						fullWidth
+						startIcon={<CheckCircleIcon />}
+					>
+						{t.approvePhotoPermission}
+					</Button>
+				)}
+				{showPhotoMode && (
+					<Button
+						onClick={onEnterPhotoMode}
+						variant="contained"
+						fullWidth
+						startIcon={<PhotoCameraIcon />}
+					>
+						{t.photoMode}
+					</Button>
+				)}
 			</DialogActions>
 		</Dialog>
 	);
@@ -604,15 +632,78 @@ function exitFullscreenLandscape(): void {
 	}
 }
 
+/**
+ * Render `text` at the largest font size that still fits inside the parent
+ * box. The hook owns the text content of the measurement span so it can
+ * binary-search the font size whenever the text or the container resizes.
+ */
+function useFitText(text: string) {
+	// Callback refs (state setters) — React invokes them when the DOM node
+	// attaches/detaches. That's important because the Dialog only mounts its
+	// children once `open` flips to true, so a plain useRef wouldn't trigger
+	// the measurement effect at the right moment.
+	const [container, setContainer] = useState<HTMLDivElement | null>(null);
+	const [measure, setMeasure] = useState<HTMLSpanElement | null>(null);
+	const [fontSize, setFontSize] = useState<number>(64);
+
+	useLayoutEffect(() => {
+		if (!container || !measure) return;
+		// Ensure measurement DOM matches the rendered text (also keeps `text` a real dep).
+		measure.textContent = text;
+		let rafId = 0;
+
+		function fit() {
+			if (!container || !measure) return;
+			const cw = container.clientWidth;
+			const ch = container.clientHeight;
+			if (cw === 0) {
+				// Container not laid out yet (e.g. mid-dialog-transition) — retry next frame.
+				rafId = requestAnimationFrame(fit);
+				return;
+			}
+			// Width is the primary constraint; for single-line nowrap text the height
+			// is just ~fontSize, and the container has overflow:hidden as a backstop.
+			// Also cap by container height so the name never grows taller than its row.
+			const maxByHeight = ch > 0 ? ch : 2000;
+			let lo = 12;
+			let hi = Math.min(2000, Math.floor(maxByHeight));
+			let best = lo;
+			for (let i = 0; i < 16; i++) {
+				const mid = Math.floor((lo + hi) / 2);
+				measure.style.fontSize = `${mid}px`;
+				if (measure.scrollWidth <= cw) {
+					best = mid;
+					lo = mid + 1;
+				} else {
+					hi = mid - 1;
+				}
+			}
+			setFontSize(best);
+		}
+
+		fit();
+		const ro = new ResizeObserver(fit);
+		ro.observe(container);
+		return () => {
+			ro.disconnect();
+			if (rafId) cancelAnimationFrame(rafId);
+		};
+	}, [container, measure, text]);
+
+	return { containerRef: setContainer, measureRef: setMeasure, fontSize };
+}
+
 function PhotoModeOverlay({
 	open,
 	member,
 	permission,
+	manuallyApproved,
 	onClose,
 }: {
 	open: boolean;
 	member: Member | null;
 	permission: PhotoPermission | null;
+	manuallyApproved: boolean;
 	onClose: () => void;
 }) {
 	const t = useT();
@@ -620,19 +711,31 @@ function PhotoModeOverlay({
 
 	useEffect(() => {
 		if (!open) return;
-		enterFullscreenLandscape();
+		// Entry (requestFullscreen + orientation lock) is initiated by the click
+		// handler in the parent because both APIs require a user-gesture stack.
+		// Here we only register the cleanup that runs when the overlay closes.
 		return exitFullscreenLandscape;
 	}, [open]);
 
-	if (!member || !permission) return null;
-	const v = verdicts[permission];
+	const displayPermission: PhotoPermission | null =
+		permission === "yes" || (permission === "ask" && manuallyApproved)
+			? permission
+			: null;
+
+	const { containerRef, measureRef, fontSize } = useFitText(member?.name ?? "");
+
+	if (!member || !displayPermission) return null;
+
+	const verdictStyle = verdicts[displayPermission];
+	const verdictLabel =
+		displayPermission === "yes" ? t.verdictYes : t.verdictApproved;
 
 	return (
 		<Dialog
 			open={open}
 			onClose={onClose}
 			fullScreen
-			slotProps={{ paper: { sx: { bgcolor: v.bg } } }}
+			slotProps={{ paper: { sx: { bgcolor: verdictStyle.bg } } }}
 		>
 			<Box
 				sx={{
@@ -640,11 +743,9 @@ function PhotoModeOverlay({
 					width: "100%",
 					display: "flex",
 					flexDirection: "column",
-					alignItems: "center",
-					justifyContent: "center",
 					p: 2,
-					textAlign: "center",
 					position: "relative",
+					boxSizing: "border-box",
 				}}
 			>
 				<Button
@@ -653,46 +754,75 @@ function PhotoModeOverlay({
 					size="small"
 					sx={{
 						position: "absolute",
-						top: 12,
-						right: 12,
-						color: v.color,
-						borderColor: v.color,
-						"&:hover": { borderColor: v.color, bgcolor: "rgba(0,0,0,0.04)" },
+						top: 8,
+						right: 8,
+						color: verdictStyle.color,
+						borderColor: verdictStyle.color,
+						"&:hover": {
+							borderColor: verdictStyle.color,
+							bgcolor: "rgba(0,0,0,0.04)",
+						},
+						zIndex: 1,
 					}}
 				>
 					{t.exitPhotoMode}
 				</Button>
 
-				<Typography
+				{/* Name — auto-fits to fill available width */}
+				<Box
+					ref={containerRef}
 					sx={{
-						color: v.color,
-						fontWeight: 500,
-						fontSize: "clamp(20px, 4vh, 36px)",
-						lineHeight: 1.1,
+						flex: 1,
+						minHeight: 0,
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "center",
+						width: "100%",
+						overflow: "hidden",
+						textAlign: "center",
 					}}
 				>
-					{member.name}
-				</Typography>
+					<span
+						ref={measureRef}
+						style={{
+							color: verdictStyle.color,
+							fontWeight: 700,
+							lineHeight: 1,
+							whiteSpace: "nowrap",
+							display: "inline-block",
+							fontSize: `${fontSize}px`,
+						}}
+					>
+						{member.name}
+					</span>
+				</Box>
+
+				{/* Member number — clearly visible, smaller than name */}
 				<Typography
 					sx={{
-						color: v.color,
-						opacity: 0.8,
-						fontSize: "clamp(14px, 2.5vh, 22px)",
-						mt: 0.5,
+						color: verdictStyle.color,
+						textAlign: "center",
+						fontWeight: 600,
+						fontSize: "clamp(18px, 5vh, 40px)",
+						lineHeight: 1.1,
+						mt: 1,
 					}}
 				>
 					{t.rowMemberNo} {member.member_no}
 				</Typography>
+
+				{/* Verdict — small, slightly larger than name caption */}
 				<Typography
 					sx={{
-						color: v.color,
+						color: verdictStyle.color,
+						textAlign: "center",
 						fontWeight: 900,
-						fontSize: "clamp(28px, 6vh, 52px)",
-						lineHeight: 1,
-						mt: 1.5,
+						fontSize: "clamp(20px, 4vh, 32px)",
+						lineHeight: 1.2,
+						mt: 1,
 					}}
 				>
-					{v.label}
+					{verdictLabel}
 				</Typography>
 			</Box>
 		</Dialog>
