@@ -34,6 +34,8 @@ export interface Translations {
 	verdictNo: string;
 	verdictAsk: string;
 	closeButton: string;
+	photoMode: string;
+	exitPhotoMode: string;
 }
 
 const sv: Translations = {
@@ -47,9 +49,9 @@ const sv: Translations = {
 	labelName: "Namn",
 	labelBorn: "Född",
 	labelGroup: "Scoutkår",
-	placeholderName: "t.ex. Håkan",
+	placeholderName: "t.ex. Nils Pärlemo",
 	placeholderBorn: "ÅÅÅÅ-MM-DD",
-	placeholderGroup: "t.ex. Trollbäckens",
+	placeholderGroup: "t.ex. Stenköpings Scoutkår",
 	hintStart: "Börja skriva i ett av fälten ovan för att söka deltagare.",
 	noResults: "Inga deltagare hittades.",
 	tooManyResults:
@@ -72,6 +74,8 @@ const sv: Translations = {
 	verdictNo: "NEJ",
 	verdictAsk: "FRÅGA",
 	closeButton: "Stäng",
+	photoMode: "Fotoläge",
+	exitPhotoMode: "Avsluta fotoläge",
 };
 
 const en: Translations = {
@@ -111,6 +115,8 @@ const en: Translations = {
 	verdictNo: "NO",
 	verdictAsk: "ASK",
 	closeButton: "Close",
+	photoMode: "Photo mode",
+	exitPhotoMode: "Exit photo mode",
 };
 
 export const translations: Record<Lang, Translations> = { sv, en };

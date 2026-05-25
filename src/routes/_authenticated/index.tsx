@@ -2,6 +2,7 @@ import CancelIcon from "@mui/icons-material/Cancel";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import HelpIcon from "@mui/icons-material/Help";
+import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import SearchIcon from "@mui/icons-material/Search";
 import {
 	Alert,
@@ -71,6 +72,7 @@ function PhotoPermissionPage() {
 	const [permissionLoading, setPermissionLoading] = useState(false);
 	const [permissionError, setPermissionError] = useState<string | null>(null);
 	const [modalOpen, setModalOpen] = useState(false);
+	const [photoModeOpen, setPhotoModeOpen] = useState(false);
 
 	const abortRef = useRef<AbortController | null>(null);
 
@@ -148,6 +150,15 @@ function PhotoPermissionPage() {
 		setModalOpen(false);
 	}
 
+	function handleEnterPhotoMode() {
+		setModalOpen(false);
+		setPhotoModeOpen(true);
+	}
+
+	function handleExitPhotoMode() {
+		setPhotoModeOpen(false);
+	}
+
 	return (
 		<Stack spacing={2}>
 			<Typography variant="h5" component="h1" fontWeight="medium">
@@ -217,6 +228,14 @@ function PhotoPermissionPage() {
 				loading={permissionLoading}
 				error={permissionError}
 				onClose={handleClose}
+				onEnterPhotoMode={handleEnterPhotoMode}
+			/>
+
+			<PhotoModeOverlay
+				open={photoModeOpen}
+				member={selected}
+				permission={permission}
+				onClose={handleExitPhotoMode}
 			/>
 		</Stack>
 	);
@@ -410,6 +429,7 @@ function PermissionModal({
 	loading,
 	error,
 	onClose,
+	onEnterPhotoMode,
 }: {
 	open: boolean;
 	member: Member | null;
@@ -417,9 +437,11 @@ function PermissionModal({
 	loading: boolean;
 	error: string | null;
 	onClose: () => void;
+	onEnterPhotoMode: () => void;
 }) {
 	const t = useT();
 	const verdicts = useVerdictStyles();
+	const canEnterPhotoMode = !loading && !error && permission !== null;
 
 	return (
 		<Dialog
@@ -472,9 +494,18 @@ function PermissionModal({
 					<VerdictBox style={verdicts[permission]} caption={t.verdictCaption} />
 				)}
 			</DialogContent>
-			<DialogActions sx={{ px: 3, pb: 2 }}>
-				<Button onClick={onClose} variant="contained" fullWidth>
+			<DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+				<Button onClick={onClose} variant="outlined" fullWidth>
 					{t.closeButton}
+				</Button>
+				<Button
+					onClick={onEnterPhotoMode}
+					variant="contained"
+					fullWidth
+					disabled={!canEnterPhotoMode}
+					startIcon={<PhotoCameraIcon />}
+				>
+					{t.photoMode}
 				</Button>
 			</DialogActions>
 		</Dialog>
@@ -530,5 +561,140 @@ function MemberRow({ label, value }: { label: string; value: string }) {
 				{value}
 			</Typography>
 		</Box>
+	);
+}
+
+interface OrientationLockable {
+	lock?: (orientation: "landscape") => Promise<void>;
+	unlock?: () => void;
+}
+
+async function enterFullscreenLandscape(): Promise<void> {
+	try {
+		if (!document.fullscreenElement) {
+			await document.documentElement.requestFullscreen?.();
+		}
+	} catch {
+		// Fullscreen not supported or denied — orientation lock will likely fail too,
+		// but the overlay still renders, so the photographer can rotate manually.
+	}
+	try {
+		const orientation = screen.orientation as ScreenOrientation &
+			OrientationLockable;
+		await orientation.lock?.("landscape");
+	} catch {
+		// Orientation lock not supported (e.g. iOS Safari) — let the user rotate manually.
+	}
+}
+
+function exitFullscreenLandscape(): void {
+	try {
+		const orientation = screen.orientation as ScreenOrientation &
+			OrientationLockable;
+		orientation.unlock?.();
+	} catch {
+		// no-op
+	}
+	try {
+		if (document.fullscreenElement) {
+			document.exitFullscreen?.();
+		}
+	} catch {
+		// no-op
+	}
+}
+
+function PhotoModeOverlay({
+	open,
+	member,
+	permission,
+	onClose,
+}: {
+	open: boolean;
+	member: Member | null;
+	permission: PhotoPermission | null;
+	onClose: () => void;
+}) {
+	const t = useT();
+	const verdicts = useVerdictStyles();
+
+	useEffect(() => {
+		if (!open) return;
+		enterFullscreenLandscape();
+		return exitFullscreenLandscape;
+	}, [open]);
+
+	if (!member || !permission) return null;
+	const v = verdicts[permission];
+
+	return (
+		<Dialog
+			open={open}
+			onClose={onClose}
+			fullScreen
+			slotProps={{ paper: { sx: { bgcolor: v.bg } } }}
+		>
+			<Box
+				sx={{
+					height: "100%",
+					width: "100%",
+					display: "flex",
+					flexDirection: "column",
+					alignItems: "center",
+					justifyContent: "center",
+					p: 2,
+					textAlign: "center",
+					position: "relative",
+				}}
+			>
+				<Button
+					onClick={onClose}
+					variant="outlined"
+					size="small"
+					sx={{
+						position: "absolute",
+						top: 12,
+						right: 12,
+						color: v.color,
+						borderColor: v.color,
+						"&:hover": { borderColor: v.color, bgcolor: "rgba(0,0,0,0.04)" },
+					}}
+				>
+					{t.exitPhotoMode}
+				</Button>
+
+				<Typography
+					sx={{
+						color: v.color,
+						fontWeight: 500,
+						fontSize: "clamp(20px, 4vh, 36px)",
+						lineHeight: 1.1,
+					}}
+				>
+					{member.name}
+				</Typography>
+				<Typography
+					sx={{
+						color: v.color,
+						opacity: 0.8,
+						fontSize: "clamp(14px, 2.5vh, 22px)",
+						mt: 0.5,
+					}}
+				>
+					{t.rowMemberNo} {member.member_no}
+				</Typography>
+				<Typography
+					sx={{
+						color: v.color,
+						fontWeight: 900,
+						fontSize: "clamp(28px, 6vh, 52px)",
+						lineHeight: 1,
+						mt: 1.5,
+					}}
+				>
+					{v.label}
+				</Typography>
+			</Box>
+		</Dialog>
 	);
 }
