@@ -1,6 +1,6 @@
 export const DEFAULT_LOCAL_SERVICE_BASE_PATH = "/";
 export const DEFAULT_DEPLOYED_SERVICE_BASE_PATH = "/_services/photo-permission";
-export const DEFAULT_SIGNUPINFO_PROXY_PREFIX = "/signupinfo";
+export const DEFAULT_SIGNUPINFO_PROXY_PREFIX = "/_services/signupinfo";
 export const DEFAULT_LOCAL_SIGNUPINFO_UPSTREAM = "http://localhost:8000";
 
 export function ensureLeadingSlash(value: string): string {
