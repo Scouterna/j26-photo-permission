@@ -637,6 +637,43 @@ function exitFullscreenLandscape(): void {
  * box. The hook owns the text content of the measurement span so it can
  * binary-search the font size whenever the text or the container resizes.
  */
+/**
+ * Greedy word-wrap simulation. Returns the number of lines `text` would
+ * occupy if rendered at `fontSize` in the given `font` shorthand, with
+ * each line constrained to `maxWidthPx`. Long unbreakable words are
+ * counted as a single line each (they overflow visually but don't get
+ * subdivided here — keeps the math simple).
+ */
+function countWrappedLines(
+	ctx: CanvasRenderingContext2D,
+	text: string,
+	font: string,
+	maxWidthPx: number,
+): { lines: number; maxLineWidth: number } {
+	ctx.font = font;
+	const words = text.split(/\s+/).filter(Boolean);
+	if (words.length === 0) return { lines: 0, maxLineWidth: 0 };
+
+	let lines = 1;
+	let current = words[0];
+	let maxLineWidth = ctx.measureText(current).width;
+
+	for (let i = 1; i < words.length; i++) {
+		const next = `${current} ${words[i]}`;
+		const w = ctx.measureText(next).width;
+		if (w <= maxWidthPx) {
+			current = next;
+			if (w > maxLineWidth) maxLineWidth = w;
+		} else {
+			lines++;
+			current = words[i];
+			const w0 = ctx.measureText(current).width;
+			if (w0 > maxLineWidth) maxLineWidth = w0;
+		}
+	}
+	return { lines, maxLineWidth };
+}
+
 function useFitText(text: string) {
 	// Callback refs (state setters) — React invokes them when the DOM node
 	// attaches/detaches. That's important because the Dialog only mounts its
@@ -647,31 +684,50 @@ function useFitText(text: string) {
 	const [fontSize, setFontSize] = useState<number>(64);
 
 	useLayoutEffect(() => {
-		if (!container || !measure) return;
-		// Ensure measurement DOM matches the rendered text (also keeps `text` a real dep).
-		measure.textContent = text;
+		if (!container) return;
 		let rafId = 0;
+		let cancelled = false;
+		const canvas = document.createElement("canvas");
+		const ctx = canvas.getContext("2d");
+		if (!ctx) return;
 
 		function fit() {
-			if (!container || !measure) return;
+			if (!container || !ctx || cancelled) return;
 			const cw = container.clientWidth;
 			const ch = container.clientHeight;
-			if (cw === 0) {
+			if (cw === 0 || ch === 0) {
 				// Container not laid out yet (e.g. mid-dialog-transition) — retry next frame.
 				rafId = requestAnimationFrame(fit);
 				return;
 			}
-			// Width is the primary constraint; for single-line nowrap text the height
-			// is just ~fontSize, and the container has overflow:hidden as a backstop.
-			// Also cap by container height so the name never grows taller than its row.
-			const maxByHeight = ch > 0 ? ch : 2000;
+			// Read the live font family / weight so canvas matches DOM rendering.
+			const styles = measure ? getComputedStyle(measure) : null;
+			const fontFamily = styles?.fontFamily ?? "Roboto, sans-serif";
+			const fontWeight = styles?.fontWeight ?? "700";
+			// Bold Roboto's actual glyph extent is ~1.17em (ascender + descender),
+			// noticeably more than the 1.05 CSS line-height. Use 1.2 so the
+			// algorithm reserves enough vertical room for real rendering.
+			const lineHeight = 1.2;
+			// 7% side margin so glyphs don't kiss the edge.
+			const widthBudget = cw * 0.93;
+
+			function fits(fs: number): boolean {
+				if (!ctx) return false;
+				const { lines, maxLineWidth } = countWrappedLines(
+					ctx,
+					text,
+					`${fontWeight} ${fs}px ${fontFamily}`,
+					widthBudget,
+				);
+				return maxLineWidth <= widthBudget && lines * fs * lineHeight <= ch;
+			}
+
 			let lo = 12;
-			let hi = Math.min(2000, Math.floor(maxByHeight));
+			let hi = Math.min(2000, Math.floor(ch));
 			let best = lo;
 			for (let i = 0; i < 16; i++) {
 				const mid = Math.floor((lo + hi) / 2);
-				measure.style.fontSize = `${mid}px`;
-				if (measure.scrollWidth <= cw * 0.95) {
+				if (fits(mid)) {
 					best = mid;
 					lo = mid + 1;
 				} else {
@@ -681,10 +737,19 @@ function useFitText(text: string) {
 			setFontSize(best);
 		}
 
+		// Wait for any web fonts to finish loading so canvas (which only sees
+		// fully-loaded fonts) measures with the same metrics the DOM will render.
+		// If the FontFaceSet API isn't available, just fit immediately.
+		if (document.fonts?.ready) {
+			document.fonts.ready.then(() => {
+				if (!cancelled) fit();
+			});
+		}
 		fit();
 		const ro = new ResizeObserver(fit);
 		ro.observe(container);
 		return () => {
+			cancelled = true;
 			ro.disconnect();
 			if (rafId) cancelAnimationFrame(rafId);
 		};
@@ -768,50 +833,69 @@ function PhotoModeOverlay({
 					{t.exitPhotoMode}
 				</Button>
 
-				{/* Name — auto-fits to fill available width */}
+				{/* Centered group: name + member, vertically centered in the
+				    space above the verdict, so the eye lands in the middle. */}
 				<Box
-					ref={containerRef}
 					sx={{
 						flex: 1,
 						minHeight: 0,
 						display: "flex",
+						flexDirection: "column",
 						alignItems: "center",
 						justifyContent: "center",
 						width: "100%",
-						overflow: "hidden",
-						textAlign: "center",
 					}}
 				>
-					<span
-						ref={measureRef}
-						style={{
-							color: verdictStyle.color,
-							fontWeight: 700,
-							lineHeight: 1,
-							whiteSpace: "nowrap",
-							display: "inline-block",
-							fontSize: `${fontSize}px`,
+					{/* Name container — fixed height so the binary search has a real
+					    vertical budget; long names wrap to multiple lines. */}
+					<Box
+						ref={containerRef}
+						sx={{
+							width: "100%",
+							height: "60vh",
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "center",
+							overflow: "hidden",
+							textAlign: "center",
 						}}
 					>
-						{member.name}
-					</span>
+						<span
+							ref={measureRef}
+							style={{
+								color: verdictStyle.color,
+								fontWeight: 700,
+								lineHeight: 1.05,
+								whiteSpace: "normal",
+								overflowWrap: "break-word",
+								display: "inline-block",
+								// Cap matches the binary-search width budget — wrapped lines
+								// will respect this cap, so the width test always passes
+								// post-wrap and height becomes the binding constraint.
+								maxWidth: "95%",
+								fontSize: `${fontSize}px`,
+							}}
+						>
+							{member.name}
+						</span>
+					</Box>
+
+					{/* Member number — directly below the name */}
+					<Typography
+						sx={{
+							color: verdictStyle.color,
+							textAlign: "center",
+							fontWeight: 600,
+							fontSize: "clamp(24px, 8vh, 64px)",
+							lineHeight: 1.1,
+							mt: 0.5,
+						}}
+					>
+						{t.rowMemberNo} {member.member_no}
+					</Typography>
 				</Box>
 
-				{/* Member number — clearly visible, smaller than name */}
-				<Typography
-					sx={{
-						color: verdictStyle.color,
-						textAlign: "center",
-						fontWeight: 600,
-						fontSize: "clamp(18px, 5vh, 40px)",
-						lineHeight: 1.1,
-						mt: 1,
-					}}
-				>
-					{t.rowMemberNo} {member.member_no}
-				</Typography>
-
-				{/* Verdict — small, slightly larger than name caption */}
+				{/* Verdict — pinned at the bottom */}
 				<Typography
 					sx={{
 						color: verdictStyle.color,
