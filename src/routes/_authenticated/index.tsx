@@ -39,7 +39,7 @@ import { getPhotoRuntimeConfig } from "#/server/runtime-config";
 
 type Role = "deltagare" | "funktionar";
 
-const DEBOUNCE_MS = 500;
+const DEBOUNCE_MS = 700;
 
 export const Route = createFileRoute("/_authenticated/")({
 	loader: () => getPhotoRuntimeConfig(),
@@ -671,7 +671,7 @@ function useFitText(text: string) {
 			for (let i = 0; i < 16; i++) {
 				const mid = Math.floor((lo + hi) / 2);
 				measure.style.fontSize = `${mid}px`;
-				if (measure.scrollWidth <= cw) {
+				if (measure.scrollWidth <= cw * 0.95) {
 					best = mid;
 					lo = mid + 1;
 				} else {
