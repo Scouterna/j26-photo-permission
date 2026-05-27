@@ -510,7 +510,15 @@ function PermissionModal({
 					<VerdictBox style={verdicts[permission]} caption={t.verdictCaption} />
 				)}
 			</DialogContent>
-			<DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+			<DialogActions
+				sx={{
+					px: 3,
+					pb: 2,
+					gap: 1,
+					flexDirection: "column",
+					alignItems: "stretch",
+				}}
+			>
 				<Button onClick={onClose} variant="outlined" fullWidth>
 					{t.closeButton}
 				</Button>
