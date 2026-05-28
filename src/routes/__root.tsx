@@ -10,6 +10,7 @@ import "@fontsource/roboto/400.css";
 import "@fontsource/roboto/500.css";
 import "@fontsource/roboto/700.css";
 import { LangContext } from "../lib/lang-context";
+import { useHtmlLang } from "../lib/use-html-lang";
 import { theme } from "../theme";
 
 export const Route = createRootRoute({
@@ -63,14 +64,14 @@ function RootNotFound() {
 }
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+	const lang = useHtmlLang();
 	return (
 		<html lang="sv" suppressHydrationWarning>
 			<head>
 				<HeadContent />
 			</head>
 			<body>
-				{/* TODO: read language preference from app shell (j26:setLanguage postMessage) */}
-				<LangContext.Provider value="sv">
+				<LangContext.Provider value={lang}>
 					<ThemeProvider theme={theme}>
 						<CssBaseline />
 						{children}
