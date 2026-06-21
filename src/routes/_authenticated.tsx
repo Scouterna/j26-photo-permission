@@ -7,11 +7,9 @@ import { getUserStatus } from "#/server/auth";
 
 export const Route = createFileRoute("/_authenticated")({
 	beforeLoad: async () => {
-		const { user, tokenPresent } = await getUserStatus();
-		// Token present but decode failed → deny
-		if (tokenPresent && !user) throw new Error("unauthorized");
-		// Valid token but missing required role → deny
-		if (user && !hasPhotoPermissionAccess(user))
+		const { user } = await getUserStatus();
+		// No valid user (missing/invalid token) or missing required role → deny
+		if (!user || !hasPhotoPermissionAccess(user))
 			throw new Error("unauthorized");
 		return { user };
 	},
