@@ -13,7 +13,8 @@ function normalizeLang(raw: string): Lang {
 }
 
 export function useHtmlLang(): Lang {
-	const [lang, setLang] = useState<Lang>(() => normalizeLang(htmlElement().lang));
+	// SSR-safe default; the effect below reads the real value on the client.
+	const [lang, setLang] = useState<Lang>("sv");
 
 	useEffect(() => {
 		const el = htmlElement();
