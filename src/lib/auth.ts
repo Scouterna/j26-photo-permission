@@ -63,25 +63,3 @@ export const PHOTO_PERMISSION_ROLES = [
 export function hasPhotoPermissionAccess(user: AppUser): boolean {
 	return PHOTO_PERMISSION_ROLES.some((role) => user.roles.includes(role));
 }
-
-const REFRESH_EXPIRES_AT_COOKIE = "j26-auth_refresh-expires-at";
-
-/**
- * True when the refresh token is still valid, i.e. an expired/missing access
- * token can be recovered via /auth/refresh. Browser-only: reads document.cookie.
- */
-export function refreshTokenStillValid(): boolean {
-	if (typeof document === "undefined") return false;
-
-	const raw = document.cookie
-		.split("; ")
-		.find((c) => c.startsWith(`${REFRESH_EXPIRES_AT_COOKIE}=`))
-		?.slice(REFRESH_EXPIRES_AT_COOKIE.length + 1);
-	if (!raw) return false;
-
-	const expiresAtMs = Number(decodeURIComponent(raw));
-	if (!Number.isFinite(expiresAtMs)) return false;
-
-	// The cookie holds a millisecond epoch timestamp.
-	return expiresAtMs > Date.now();
-}
